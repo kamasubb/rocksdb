@@ -22,9 +22,11 @@
 #endif
 #endif
 #include "util/coding.h"
+#ifdef  __powerpc64__
 #include "util/crc32c_ppc_constants.h"
 #include "util/crc32c_ppc.h"
 #include "util/ppc.h"
+#endif
 namespace rocksdb {
 namespace crc32c {
 static const uint32_t table0_[256] = {
@@ -411,17 +413,19 @@ static bool isSSE42() {
 #endif
 }
 #endif
+
+#if defined(__powerpc64__) && defined(HAS_ALTIVEC) 
 uint32_t ExtendPPCImpl(uint32_t crc, const char* buf, size_t size) {
   return crc32c_ppc(crc,(const unsigned char*)buf,size);
 }
 static bool isAltiVec(){
-#if defined(__powerpc64__) && defined(HAS_ALTIVEC) 
   if (arch_ppc_probe()) {
     return true;
+  }else{
+    return false;
   }
-# endif
-  return false;
 }
+# endif
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
 static Function Choose_Extend() {

@@ -1,3 +1,11 @@
+/* Copyright (C) 2017 International Business Machines Corp.
+ * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
 #define CRC_TABLE
 #include <inttypes.h>
 #include <stdlib.h>
@@ -70,6 +78,7 @@ out:
  * does not gracefully handle the case where the data pointer is NULL.  There
  * may be room for performance improvement here.
  */
+#if defined(__powerpc64__)
 uint32_t crc32c_ppc(uint32_t crc, unsigned char const *data, unsigned len)
 {
 	unsigned char *buf2;
@@ -84,3 +93,4 @@ uint32_t crc32c_ppc(uint32_t crc, unsigned char const *data, unsigned len)
 	}
 	return crc;
 }
+#endif

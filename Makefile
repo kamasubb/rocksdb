@@ -96,6 +96,7 @@ endif
 endif
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 CXXFLAGS += -DHAS_ALTIVEC
+HAS_ALTIVEC=1
 endif
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
@@ -286,7 +287,6 @@ util/build_version.cc: FORCE
 
 LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
 LIBASMOBJECTS = $(LIB_ASM_SOURCE:.S=.o)
-#LIBOBJECTS += $(LIBASMOBJECTS)
 LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.o)
 MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
 
@@ -890,7 +890,6 @@ package:
 # 	Unit tests and tools
 # ---------------------------------------------------------------------------
 #LIBASMOBJECTS=$(LIB_ASM_SOURCES:.S=.o)
-
 $(LIBRARY): $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS) $(LIBASMOBJECTS)

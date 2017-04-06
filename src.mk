@@ -97,8 +97,6 @@ LIB_SOURCES =                                                   \
   util/compaction_job_stats_impl.cc                             \
   util/concurrent_arena.cc                                      \
   util/crc32c.cc                                                \
-  util/crc32c_ppc.cc                                            \
-  util/ppc.cc                                                  \
   util/db_options.cc                                            \
   util/delete_scheduler.cc                                      \
   util/dynamic_bloom.cc                                         \
@@ -198,9 +196,15 @@ MOCK_LIB_SOURCES = \
   util/mock_env.cc \
   util/fault_injection_test_env.cc
 
+ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 LIB_ASM_SOURCE =\
   util/crc32c_ppc_asm.S                                         
-
+LIB_SOURCES += \
+  util/crc32c_ppc.cc                                            \
+  util/ppc.cc
+else
+LIB_ASM_SOURCE = 
+endif
 BENCH_LIB_SOURCES = \
   tools/db_bench_tool.cc                                        \
 
