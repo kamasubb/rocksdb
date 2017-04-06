@@ -1,3 +1,11 @@
+/* Copyright (C) 2017 International Business Machines Corp.
+ * All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version
+ * 2 of the License, or (at your option) any later version.
+ */
 #include "util/ppc.h"
 //#include "util/probe.h"
 
@@ -19,7 +27,6 @@ int arch_ppc_crc32 = 0;
 #ifndef AT_HWCAP2
 #define AT_HWCAP2       26
 #endif
-
 static unsigned long get_auxval(unsigned long type)
 {
 	unsigned long result = 0;
@@ -40,13 +47,13 @@ static unsigned long get_auxval(unsigned long type)
 	return result;
 }
 
-
 int arch_ppc_probe(void)
 {
-        arch_ppc_crc32 = 0;
+	arch_ppc_crc32 = 0;
 #if defined(__linux__) && defined(__powerpc64__)
-        if (get_auxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
-#endif
+        if (getauxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
+#endif /* __linux__ && __powerpc64__ */
+        
 	return arch_ppc_crc32;
 }
 #endif // __linux__
