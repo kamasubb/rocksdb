@@ -97,6 +97,8 @@ LIB_SOURCES =                                                   \
   util/compaction_job_stats_impl.cc                             \
   util/concurrent_arena.cc                                      \
   util/crc32c.cc                                                \
+  util/crc32c_ppc.cc                                            \
+  util/ppc.cc                                                  \
   util/db_options.cc                                            \
   util/delete_scheduler.cc                                      \
   util/dynamic_bloom.cc                                         \
@@ -195,6 +197,9 @@ MOCK_LIB_SOURCES = \
   table/mock_table.cc \
   util/mock_env.cc \
   util/fault_injection_test_env.cc
+
+LIB_ASM_SOURCE =\
+  util/crc32c_ppc_asm.S                                         
 
 BENCH_LIB_SOURCES = \
   tools/db_bench_tool.cc                                        \

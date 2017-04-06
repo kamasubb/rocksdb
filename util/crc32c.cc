@@ -22,10 +22,11 @@
 #endif
 #endif
 #include "util/coding.h"
-
+#include "util/crc32c_ppc_constants.h"
+#include "util/crc32c_ppc.h"
+#include "util/ppc.h"
 namespace rocksdb {
 namespace crc32c {
-
 static const uint32_t table0_[256] = {
   0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4,
   0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb,
@@ -394,6 +395,7 @@ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
 }
 
 // Detect if SS42 or not.
+#ifndef  __powerpc64__
 static bool isSSE42() {
 #if defined(__GNUC__) && defined(__x86_64__) && !defined(IOS_CROSS_COMPILE)
   uint32_t c_;
@@ -408,11 +410,26 @@ static bool isSSE42() {
   return false;
 #endif
 }
-
+#endif
+uint32_t ExtendPPCImpl(uint32_t crc, const char* buf, size_t size) {
+  return crc32c_ppc(crc,(const unsigned char*)buf,size);
+}
+static bool isAltiVec(){
+#if defined(__powerpc64__) && defined(HAS_ALTIVEC) 
+  if (arch_ppc_probe()) {
+    return true;
+  }
+# endif
+  return false;
+}
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
-static inline Function Choose_Extend() {
+static Function Choose_Extend() {
+#ifndef  __powerpc64__
   return isSSE42() ? ExtendImpl<Fast_CRC32> : ExtendImpl<Slow_CRC32>;
+#else
+  return isAltiVec() ? ExtendPPCImpl : ExtendImpl<Slow_CRC32>;
+#endif
 }
 
 bool IsFastCrc32Supported() {
@@ -421,6 +438,12 @@ bool IsFastCrc32Supported() {
 #elif defined(_WIN64)
   return isSSE42();
 #else
+# if defined(__powerpc64__) && defined(HAS_ALTIVEC)
+  if (arch_ppc_probe()) {
+    return true;
+  }
+# endif
+
   return false;
 #endif
 }

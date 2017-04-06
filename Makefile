@@ -94,7 +94,9 @@ ifeq (,$(shell $(CXX) -fsyntax-only -momit-leaf-frame-pointer -xc /dev/null 2>&1
 OPT += -momit-leaf-frame-pointer
 endif
 endif
-
+ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
+CXXFLAGS += -DHAS_ALTIVEC
+endif
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
 ifeq ($(DEBUG_LEVEL),0)
@@ -255,8 +257,8 @@ LDFLAGS += $(LUA_LIB)
 endif
 
 
-CFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
-CXXFLAGS += $(WARNING_FLAGS) -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers
+CFLAGS += $(WARNING_FLAGS) -I../ -I. -I./include $(PLATFORM_CCFLAGS) $(OPT)
+CXXFLAGS += $(WARNING_FLAGS) -I../ -I. -I./include $(PLATFORM_CXXFLAGS) $(OPT) -Woverloaded-virtual -Wnon-virtual-dtor -Wno-missing-field-initializers
 
 LDFLAGS += $(PLATFORM_LDFLAGS)
 
@@ -283,6 +285,8 @@ util/build_version.cc: FORCE
 	else mv -f $@-t $@; fi
 
 LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
+LIBASMOBJECTS = $(LIB_ASM_SOURCE:.S=.o)
+#LIBOBJECTS += $(LIBASMOBJECTS)
 LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.o)
 MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
 
@@ -294,9 +298,9 @@ VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
+BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(TESTUTIL) $(LIB_ASM_SOURCE:.S=.o)
 
-EXPOBJECTS = $(EXP_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(TESTUTIL)
+EXPOBJECTS = $(EXP_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 
 TESTS = \
 	db_basic_test \
@@ -521,8 +525,8 @@ $(SHARED3): $(SHARED4)
 	ln -fs $(SHARED4) $(SHARED3)
 endif
 
-$(SHARED4):
-	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LIB_SOURCES) $(TOOL_LIB_SOURCES) \
+$(SHARED4): $(LIBOBJECTS)
+	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LIB_SOURCES) $(LIB_ASM_SOURCE)  $(TOOL_LIB_SOURCES) \
 		$(LDFLAGS) -o $@
 
 endif  # PLATFORM_SHARED_EXT
@@ -535,7 +539,7 @@ endif  # PLATFORM_SHARED_EXT
 
 all: $(LIBRARY) $(BENCHMARKS) tools tools_lib test_libs $(TESTS)
 
-static_lib: $(LIBRARY)
+static_lib: $(LIBASMOBJECT) $(LIBRARY)
 
 shared_lib: $(SHARED)
 
@@ -845,7 +849,7 @@ analyze: clean
 CLEAN_FILES += unity.cc
 unity.cc: Makefile
 	rm -f $@ $@-t
-	for source_file in $(LIB_SOURCES); do \
+	for source_file in $(LIB_SOURCES) $(LIB_ASM_SOURCE) ; do \
 		echo "#include \"$$source_file\"" >> $@-t; \
 	done
 	chmod a=r $@-t
@@ -854,17 +858,18 @@ unity.cc: Makefile
 unity.a: unity.o
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ unity.o
+AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(CXXFLAGS) $(LDFLAGS) $(COVERAGEFLAGS)
 
 # try compiling db_test with unity
 unity_test: db/db_test.o db/db_test_util.o $(TESTHARNESS) unity.a
 	$(AM_LINK)
 	./unity_test
 
-rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) unity.cc
+rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) $(LIB_ASM_SOURCE) unity.cc
 	build_tools/amalgamate.py -I. -i./include unity.cc -x include/rocksdb/c.h -H rocksdb.h -o rocksdb.cc
 
 clean:
-	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(LIBRARY) $(SHARED)
+	rm -f $(BENCHMARKS) $(TOOLS) $(TESTS) $(LIBRARY) $(SHARED) $(LIBASMOBJECTS)
 	rm -rf $(CLEAN_FILES) ios-x86 ios-arm scan_build_report
 	find . -name "*.[oda]" -exec rm -f {} \;
 	find . -type f -regex ".*\.\(\(gcda\)\|\(gcno\)\)" -exec rm {} \;
@@ -884,453 +889,460 @@ package:
 # ---------------------------------------------------------------------------
 # 	Unit tests and tools
 # ---------------------------------------------------------------------------
-$(LIBRARY): $(LIBOBJECTS)
-	$(AM_V_AR)rm -f $@
-	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS)
+#LIBASMOBJECTS=$(LIB_ASM_SOURCES:.S=.o)
 
-$(TOOLS_LIBRARY): $(BENCH_LIB_SOURCES:.cc=.o) $(TOOL_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(TESTUTIL)
+$(LIBRARY): $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_V_AR)rm -f $@
-	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
+	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS) $(LIBASMOBJECTS)
 
-librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(TESTHARNESS)
+$(TOOLS_LIBRARY): $(BENCH_LIB_SOURCES:.cc=.o) $(TOOL_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(LIB_ASM_SOURCE:.S=.o) $(TESTUTIL)
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
-db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS)
+librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	$(AM_V_AR)rm -f $@
+	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
+
+db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS) $(LIBASMOBJECTS)
+	$(AM_LINK) 
+
+cache_bench: util/cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-cache_bench: util/cache_bench.o $(LIBOBJECTS) $(TESTUTIL)
+persistent_cache_bench: utilities/persistent_cache/persistent_cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-persistent_cache_bench: utilities/persistent_cache/persistent_cache_bench.o $(LIBOBJECTS) $(TESTUTIL)
+memtablerep_bench: db/memtablerep_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-memtablerep_bench: db/memtablerep_bench.o $(LIBOBJECTS) $(TESTUTIL)
+db_stress: tools/db_stress.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-db_stress: tools/db_stress.o $(LIBOBJECTS) $(TESTUTIL)
+write_stress: tools/write_stress.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-write_stress: tools/write_stress.o $(LIBOBJECTS) $(TESTUTIL)
+db_sanity_test: tools/db_sanity_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-db_sanity_test: tools/db_sanity_test.o $(LIBOBJECTS) $(TESTUTIL)
+db_repl_stress: tools/db_repl_stress.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
-db_repl_stress: tools/db_repl_stress.o $(LIBOBJECTS) $(TESTUTIL)
+arena_test: util/arena_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-arena_test: util/arena_test.o $(LIBOBJECTS) $(TESTHARNESS)
+autovector_test: util/autovector_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-autovector_test: util/autovector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+column_family_test: db/column_family_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-column_family_test: db/column_family_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+table_properties_collector_test: db/table_properties_collector_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_properties_collector_test: db/table_properties_collector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+bloom_test: util/bloom_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-bloom_test: util/bloom_test.o $(LIBOBJECTS) $(TESTHARNESS)
+dynamic_bloom_test: util/dynamic_bloom_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-dynamic_bloom_test: util/dynamic_bloom_test.o $(LIBOBJECTS) $(TESTHARNESS)
+c_test: db/c_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-c_test: db/c_test.o $(LIBOBJECTS) $(TESTHARNESS)
+cache_test: util/cache_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cache_test: util/cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
+coding_test: util/coding_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-coding_test: util/coding_test.o $(LIBOBJECTS) $(TESTHARNESS)
+option_change_migration_test: utilities/option_change_migration/option_change_migration_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-option_change_migration_test: utilities/option_change_migration/option_change_migration_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+stringappend_test: utilities/merge_operators/string_append/stringappend_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-stringappend_test: utilities/merge_operators/string_append/stringappend_test.o $(LIBOBJECTS) $(TESTHARNESS)
+redis_test: utilities/redis/redis_lists_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-redis_test: utilities/redis/redis_lists_test.o $(LIBOBJECTS) $(TESTHARNESS)
+hash_table_test: utilities/persistent_cache/hash_table_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-hash_table_test: utilities/persistent_cache/hash_table_test.o $(LIBOBJECTS) $(TESTHARNESS)
+histogram_test: util/histogram_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-histogram_test: util/histogram_test.o $(LIBOBJECTS) $(TESTHARNESS)
+thread_local_test: util/thread_local_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-thread_local_test: util/thread_local_test.o $(LIBOBJECTS) $(TESTHARNESS)
+corruption_test: db/corruption_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-corruption_test: db/corruption_test.o $(LIBOBJECTS) $(TESTHARNESS)
+crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	echo $(AM_LINK)
 	$(AM_LINK)
 
-crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(TESTHARNESS)
+slice_transform_test: util/slice_transform_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-slice_transform_test: util/slice_transform_test.o $(LIBOBJECTS) $(TESTHARNESS)
+db_basic_test: db/db_basic_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_basic_test: db/db_basic_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_test: db/db_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_test: db/db_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_test2: db/db_test2.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_test2: db/db_test2.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_block_cache_test: db/db_block_cache_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_block_cache_test: db/db_block_cache_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_bloom_filter_test: db/db_bloom_filter_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_bloom_filter_test: db/db_bloom_filter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_log_iter_test: db/db_log_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_log_iter_test: db/db_log_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_compaction_filter_test: db/db_compaction_filter_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	$(AM_LINK) 
+
+db_compaction_test: db/db_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_compaction_filter_test: db/db_compaction_filter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_dynamic_level_test: db/db_dynamic_level_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_compaction_test: db/db_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_flush_test: db/db_flush_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_dynamic_level_test: db/db_dynamic_level_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_inplace_update_test: db/db_inplace_update_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_flush_test: db/db_flush_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_iterator_test: db/db_iterator_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_inplace_update_test: db/db_inplace_update_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_memtable_test: db/db_memtable_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_iterator_test: db/db_iterator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_merge_operator_test: db/db_merge_operator_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_memtable_test: db/db_memtable_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_options_test: db/db_options_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_merge_operator_test: db/db_merge_operator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_range_del_test: db/db_range_del_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_options_test: db/db_options_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_sst_test: db/db_sst_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_range_del_test: db/db_range_del_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+external_sst_file_basic_test: db/external_sst_file_basic_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_sst_test: db/db_sst_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+external_sst_file_test: db/external_sst_file_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-external_sst_file_basic_test: db/external_sst_file_basic_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_tailing_iter_test: db/db_tailing_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-external_sst_file_test: db/external_sst_file_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_iter_test: db/db_iter_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_tailing_iter_test: db/db_tailing_iter_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_universal_compaction_test: db/db_universal_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_iter_test: db/db_iter_test.o $(LIBOBJECTS) $(TESTHARNESS)
+db_wal_test: db/db_wal_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_universal_compaction_test: db/db_universal_compaction_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_io_failure_test: db/db_io_failure_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_wal_test: db/db_wal_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_properties_test: db/db_properties_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_io_failure_test: db/db_io_failure_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+db_table_properties_test: db/db_table_properties_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-db_properties_test: db/db_properties_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-db_table_properties_test: db/db_table_properties_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-log_write_bench: util/log_write_bench.o $(LIBOBJECTS) $(TESTHARNESS)
+log_write_bench: util/log_write_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
-plain_table_db_test: db/plain_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+plain_table_db_test: db/plain_table_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-comparator_db_test: db/comparator_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+comparator_db_test: db/comparator_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(TESTHARNESS)
+table_reader_bench: table/table_reader_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK) $(PROFILING_FLAGS)
 
-perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
+perf_context_test: db/perf_context_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
 
-prefix_test: db/prefix_test.o $(LIBOBJECTS) $(TESTHARNESS)
+prefix_test: db/prefix_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
 
-backupable_db_test: utilities/backupable/backupable_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+backupable_db_test: utilities/backupable/backupable_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+blob_db_test: utilities/blob_db/blob_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-checkpoint_test: utilities/checkpoint/checkpoint_test.o $(LIBOBJECTS) $(TESTHARNESS)
+checkpoint_test: utilities/checkpoint/checkpoint_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-document_db_test: utilities/document/document_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+document_db_test: utilities/document/document_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-json_document_test: utilities/document/json_document_test.o $(LIBOBJECTS) $(TESTHARNESS)
+json_document_test: utilities/document/json_document_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sim_cache_test: utilities/simulator_cache/sim_cache_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+sim_cache_test: utilities/simulator_cache/sim_cache_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-spatial_db_test: utilities/spatialdb/spatial_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+spatial_db_test: utilities/spatialdb/spatial_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-env_mirror_test: utilities/env_mirror_test.o $(LIBOBJECTS) $(TESTHARNESS)
+env_mirror_test: utilities/env_mirror_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 ifdef ROCKSDB_USE_LIBRADOS
-env_librados_test: utilities/env_librados_test.o $(LIBOBJECTS) $(TESTHARNESS)
+env_librados_test: utilities/env_librados_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 endif
 
-object_registry_test: utilities/object_registry_test.o $(LIBOBJECTS) $(TESTHARNESS)
+object_registry_test: utilities/object_registry_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ttl_test: utilities/ttl/ttl_test.o $(LIBOBJECTS) $(TESTHARNESS)
+ttl_test: utilities/ttl/ttl_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-date_tiered_test: utilities/date_tiered/date_tiered_test.o $(LIBOBJECTS) $(TESTHARNESS)
+date_tiered_test: utilities/date_tiered/date_tiered_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-write_batch_with_index_test: utilities/write_batch_with_index/write_batch_with_index_test.o $(LIBOBJECTS) $(TESTHARNESS)
+write_batch_with_index_test: utilities/write_batch_with_index/write_batch_with_index_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-flush_job_test: db/flush_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
+flush_job_test: db/flush_job_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_iterator_test: db/compaction_iterator_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compaction_iterator_test: db/compaction_iterator_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_job_test: db/compaction_job_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compaction_job_test: db/compaction_job_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_job_stats_test: db/compaction_job_stats_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compaction_job_stats_test: db/compaction_job_stats_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compact_on_deletion_collector_test: utilities/table_properties_collectors/compact_on_deletion_collector_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compact_on_deletion_collector_test: utilities/table_properties_collectors/compact_on_deletion_collector_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-wal_manager_test: db/wal_manager_test.o $(LIBOBJECTS) $(TESTHARNESS)
+wal_manager_test: db/wal_manager_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-dbformat_test: db/dbformat_test.o $(LIBOBJECTS) $(TESTHARNESS)
+dbformat_test: db/dbformat_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-env_basic_test: util/env_basic_test.o $(LIBOBJECTS) $(TESTHARNESS)
+env_basic_test: util/env_basic_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-env_test: util/env_test.o $(LIBOBJECTS) $(TESTHARNESS)
+env_test: util/env_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-fault_injection_test: db/fault_injection_test.o $(LIBOBJECTS) $(TESTHARNESS)
+fault_injection_test: db/fault_injection_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-rate_limiter_test: util/rate_limiter_test.o $(LIBOBJECTS) $(TESTHARNESS)
+rate_limiter_test: util/rate_limiter_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-delete_scheduler_test: util/delete_scheduler_test.o $(LIBOBJECTS) $(TESTHARNESS)
+delete_scheduler_test: util/delete_scheduler_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-filename_test: db/filename_test.o $(LIBOBJECTS) $(TESTHARNESS)
+filename_test: db/filename_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-file_reader_writer_test: util/file_reader_writer_test.o $(LIBOBJECTS) $(TESTHARNESS)
+file_reader_writer_test: util/file_reader_writer_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-block_based_filter_block_test: table/block_based_filter_block_test.o $(LIBOBJECTS) $(TESTHARNESS)
+block_based_filter_block_test: table/block_based_filter_block_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-full_filter_block_test: table/full_filter_block_test.o $(LIBOBJECTS) $(TESTHARNESS)
+full_filter_block_test: table/full_filter_block_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+partitioned_filter_block_test: table/partitioned_filter_block_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-partitioned_filter_block_test: table/partitioned_filter_block_test.o $(LIBOBJECTS) $(TESTHARNESS)
+log_test: db/log_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-log_test: db/log_test.o $(LIBOBJECTS) $(TESTHARNESS)
+cleanable_test: table/cleanable_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cleanable_test: table/cleanable_test.o $(LIBOBJECTS) $(TESTHARNESS)
+table_test: table/table_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-table_test: table/table_test.o $(LIBOBJECTS) $(TESTHARNESS)
+block_test: table/block_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-block_test: table/block_test.o $(LIBOBJECTS) $(TESTHARNESS)
+inlineskiplist_test: db/inlineskiplist_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-inlineskiplist_test: db/inlineskiplist_test.o $(LIBOBJECTS) $(TESTHARNESS)
+skiplist_test: db/skiplist_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-skiplist_test: db/skiplist_test.o $(LIBOBJECTS) $(TESTHARNESS)
+version_edit_test: db/version_edit_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-version_edit_test: db/version_edit_test.o $(LIBOBJECTS) $(TESTHARNESS)
+version_set_test: db/version_set_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-version_set_test: db/version_set_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compaction_picker_test: db/compaction_picker_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compaction_picker_test: db/compaction_picker_test.o $(LIBOBJECTS) $(TESTHARNESS)
+version_builder_test: db/version_builder_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-version_builder_test: db/version_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+file_indexer_test: db/file_indexer_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-file_indexer_test: db/file_indexer_test.o $(LIBOBJECTS) $(TESTHARNESS)
+reduce_levels_test: tools/reduce_levels_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-reduce_levels_test: tools/reduce_levels_test.o $(LIBOBJECTS) $(TESTHARNESS)
+write_batch_test: db/write_batch_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-write_batch_test: db/write_batch_test.o $(LIBOBJECTS) $(TESTHARNESS)
+write_controller_test: db/write_controller_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-write_controller_test: db/write_controller_test.o $(LIBOBJECTS) $(TESTHARNESS)
+merge_helper_test: db/merge_helper_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-merge_helper_test: db/merge_helper_test.o $(LIBOBJECTS) $(TESTHARNESS)
+memory_test: utilities/memory/memory_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-memory_test: utilities/memory/memory_test.o $(LIBOBJECTS) $(TESTHARNESS)
+merge_test: db/merge_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-merge_test: db/merge_test.o $(LIBOBJECTS) $(TESTHARNESS)
+merger_test: table/merger_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-merger_test: table/merger_test.o $(LIBOBJECTS) $(TESTHARNESS)
+util_merge_operators_test: utilities/util_merge_operators_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-util_merge_operators_test: utilities/util_merge_operators_test.o $(LIBOBJECTS) $(TESTHARNESS)
+options_file_test: db/options_file_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-options_file_test: db/options_file_test.o $(LIBOBJECTS) $(TESTHARNESS)
+deletefile_test: db/deletefile_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-deletefile_test: db/deletefile_test.o $(LIBOBJECTS) $(TESTHARNESS)
+geodb_test: utilities/geodb/geodb_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-geodb_test: utilities/geodb/geodb_test.o $(LIBOBJECTS) $(TESTHARNESS)
+rocksdb_dump: tools/dump/rocksdb_dump.o $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_LINK)
 
-rocksdb_dump: tools/dump/rocksdb_dump.o $(LIBOBJECTS)
+rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_LINK)
 
-rocksdb_undump: tools/dump/rocksdb_undump.o $(LIBOBJECTS)
+cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cuckoo_table_builder_test: table/cuckoo_table_builder_test.o $(LIBOBJECTS) $(TESTHARNESS)
+cuckoo_table_reader_test: table/cuckoo_table_reader_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cuckoo_table_reader_test: table/cuckoo_table_reader_test.o $(LIBOBJECTS) $(TESTHARNESS)
+cuckoo_table_db_test: db/cuckoo_table_db_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-cuckoo_table_db_test: db/cuckoo_table_db_test.o $(LIBOBJECTS) $(TESTHARNESS)
+listener_test: db/listener_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-listener_test: db/listener_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+thread_list_test: util/thread_list_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-thread_list_test: util/thread_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
+compact_files_test: db/compact_files_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-compact_files_test: db/compact_files_test.o $(LIBOBJECTS) $(TESTHARNESS)
+options_test: util/options_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-options_test: util/options_test.o $(LIBOBJECTS) $(TESTHARNESS)
+options_settable_test: util/options_settable_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-options_settable_test: util/options_settable_test.o $(LIBOBJECTS) $(TESTHARNESS)
-	$(AM_LINK)
-
-options_util_test: utilities/options/options_util_test.o $(LIBOBJECTS) $(TESTHARNESS)
+options_util_test: utilities/options/options_util_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 db_bench_tool_test: tools/db_bench_tool_test.o $(BENCHTOOLOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-event_logger_test: util/event_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
+event_logger_test: util/event_logger_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sst_dump_test: tools/sst_dump_test.o $(LIBOBJECTS) $(TESTHARNESS)
+sst_dump_test: tools/sst_dump_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 column_aware_encoding_test: utilities/column_aware_encoding_test.o $(TESTHARNESS) $(EXPOBJECTS)
 	$(AM_LINK)
 
-optimistic_transaction_test: utilities/transactions/optimistic_transaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
+optimistic_transaction_test: utilities/transactions/optimistic_transaction_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-mock_env_test : util/mock_env_test.o $(LIBOBJECTS) $(TESTHARNESS)
+mock_env_test : util/mock_env_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-manual_compaction_test: db/manual_compaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
+manual_compaction_test: db/manual_compaction_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-filelock_test: util/filelock_test.o $(LIBOBJECTS) $(TESTHARNESS)
+filelock_test: util/filelock_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-auto_roll_logger_test: db/auto_roll_logger_test.o $(LIBOBJECTS) $(TESTHARNESS)
+auto_roll_logger_test: db/auto_roll_logger_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-memtable_list_test: db/memtable_list_test.o $(LIBOBJECTS) $(TESTHARNESS)
+memtable_list_test: db/memtable_list_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-write_callback_test: db/write_callback_test.o $(LIBOBJECTS) $(TESTHARNESS)
+write_callback_test: db/write_callback_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 heap_test: util/heap_test.o $(GTEST)
 	$(AM_LINK)
 
-transaction_test: utilities/transactions/transaction_test.o $(LIBOBJECTS) $(TESTHARNESS)
+transaction_test: utilities/transactions/transaction_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-sst_dump: tools/sst_dump.o $(LIBOBJECTS)
+sst_dump: tools/sst_dump.o $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_LINK)
 
 column_aware_encoding_exp: utilities/column_aware_encoding_exp.o $(EXPOBJECTS)
 	$(AM_LINK)
 
-repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+#power_opt_crc32: util/crc32c_ppc_asm.o
+
+#util/crc32c_ppc_asm.o:
+#	g++ -I./ util/crc32c_ppc_asm.S -c -o util/crc32c_ppc_asm.o
+
+repair_test: db/repair_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(TESTHARNESS)
+ldb_cmd_test: tools/ldb_cmd_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-ldb: tools/ldb.o $(LIBOBJECTS)
+ldb: tools/ldb.o $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_LINK)
 
-iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(TESTHARNESS)
+iostats_context_test: util/iostats_context_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS)
 
-persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+persistent_cache_test: utilities/persistent_cache/persistent_cache_test.o  db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-statistics_test: util/statistics_test.o $(LIBOBJECTS) $(TESTHARNESS)
+statistics_test: util/statistics_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-lru_cache_test: util/lru_cache_test.o $(LIBOBJECTS) $(TESTHARNESS)
+lru_cache_test: util/lru_cache_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-lua_test: utilities/lua/rocks_lua_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+lua_test: utilities/lua/rocks_lua_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
-range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LIBOBJECTS) $(TESTHARNESS)
+range_del_aggregator_test: db/range_del_aggregator_test.o db/db_test_util.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 #-------------------------------------------------
@@ -1576,9 +1588,12 @@ IOSVERSION=$(shell defaults read $(PLATFORMSROOT)/iPhoneOS.platform/version CFBu
 	lipo ios-x86/$@ ios-arm/$@ -create -output $@
 
 else
-.cc.o:
+.cc.o: $(LIBASMOBJECTS)
+	echo $(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
+.S.o:
+	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 .c.o:
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 endif
@@ -1595,11 +1610,15 @@ DEPFILES = $(all_sources:.cc=.d)
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
-$(DEPFILES): %.d: %.cc
+$(DEPFILES): %.d: %.cc 
 	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' "$<" -o '$@'
 
-depend: $(DEPFILES)
+$(DEPASMFILES): %.d: %.S
+	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	  -MM -MT'$@' -MT'$(<:.S=.o)' "$<" -o '$@'
+
+depend: $(DEPFILES) $(DEPASMFILES) 
 
 # if the make goal is either "clean" or "format", we shouldn't
 # try to import the *.d files.
