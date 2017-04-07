@@ -51,7 +51,7 @@ int arch_ppc_probe(void)
 {
 	arch_ppc_crc32 = 0;
 #if defined(__linux__) && defined(__powerpc64__)
-        if (getauxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
+        if (get_auxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
 #endif /* __linux__ && __powerpc64__ */
         
 	return arch_ppc_crc32;
