@@ -94,10 +94,17 @@ ifeq (,$(shell $(CXX) -fsyntax-only -momit-leaf-frame-pointer -xc /dev/null 2>&1
 OPT += -momit-leaf-frame-pointer
 endif
 endif
+
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
 CXXFLAGS += -DHAS_ALTIVEC
 HAS_ALTIVEC=1
 endif
+
+ifeq (,$(shell $(CXX) -fsyntax-only -mcpu=power8 -xc /dev/null 2>&1))
+CXXFLAGS += -DHAVE_POWER8
+HAVE_POWER8=1
+endif
+
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
 ifeq ($(DEBUG_LEVEL),0)

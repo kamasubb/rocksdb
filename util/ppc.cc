@@ -7,13 +7,14 @@
  * 2 of the License, or (at your option) any later version.
  */
 #include "util/ppc.h"
-//#include "util/probe.h"
 
 /* flags we export */
 int arch_ppc_crc32 = 0;
 
+#if __linux__ && __powerpc64__
 #include <stdio.h>
 #include <sys/auxv.h>
+#endif /* __linux__ && __powerpc64__ */
 
 #if __linux__
 
@@ -27,34 +28,16 @@ int arch_ppc_crc32 = 0;
 #ifndef AT_HWCAP2
 #define AT_HWCAP2       26
 #endif
-static unsigned long get_auxval(unsigned long type)
-{
-	unsigned long result = 0;
-	int read = 0;
-	FILE *f = fopen("/proc/self/auxv", "r");
-	if (f) {
-		ElfW(auxv_t) entry;
-		while ((read = fread(&entry, sizeof(entry), 1, f)) > 0) {
-			if (read != 1)
-				break;
-			if (entry.a_type == type) {
-				result = entry.a_un.a_val;
-				break;
-			}
-		}
-		fclose(f);
-	}
-	return result;
-}
 
 int arch_ppc_probe(void)
 {
-	arch_ppc_crc32 = 0;
+  arch_ppc_crc32 = 0;
+
 #if defined(__linux__) && defined(__powerpc64__)
-        if (get_auxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
+  if (getauxval(AT_HWCAP2) & PPC_FEATURE2_VEC_CRYPTO) arch_ppc_crc32 = 1;
 #endif /* __linux__ && __powerpc64__ */
         
-	return arch_ppc_crc32;
+  return arch_ppc_crc32;
 }
 #endif // __linux__
 

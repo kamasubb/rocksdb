@@ -10,11 +10,14 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <strings.h>
+
 #include "util/crc32c_ppc_constants.h"
 #include "util/crc32c_ppc.h"
+
 #define VMX_ALIGN	16
 #define VMX_ALIGN_MASK	(VMX_ALIGN-1)
 
+#ifdef HAVE_POWER8
 #ifdef REFLECT
 static unsigned int crc32_align(unsigned int crc, unsigned char const *p,
 			       unsigned long len)
@@ -33,11 +36,9 @@ static unsigned int crc32_align(unsigned int crc, unsigned char const *p,
 }
 #endif
 
-/*
 unsigned int crc32_vpmsum(unsigned int crc, unsigned char *p,
-			  unsigned long len)
-*/
-uint32_t crc32c_ppc_internal(uint32_t crc, unsigned char const *data, unsigned len)
+			  unsigned long len);
+static uint32_t crc32c_ppc_internal(uint32_t crc, unsigned char const *data, unsigned len)
 {
 	unsigned int prealign;
 	unsigned int tail;
@@ -78,7 +79,6 @@ out:
  * does not gracefully handle the case where the data pointer is NULL.  There
  * may be room for performance improvement here.
  */
-#if defined(__powerpc64__)
 uint32_t crc32c_ppc(uint32_t crc, unsigned char const *data, unsigned len)
 {
 	unsigned char *buf2;
@@ -93,4 +93,15 @@ uint32_t crc32c_ppc(uint32_t crc, unsigned char const *data, unsigned len)
 	}
 	return crc;
 }
-#endif
+#else /* HAVE_POWER8 */
+
+/* This symbol has to exist on non-ppc architectures (and on legacy
+ * ppc systems using power7 or below) in order to compile properly
+ * there, even though it won't be called.
+ */
+uint32_t ceph_crc32c_ppc(uint32_t crc, unsigned char const *data, unsigned len)
+{
+  return 0;
+}
+
+#endif /* HAVE_POWER8 */

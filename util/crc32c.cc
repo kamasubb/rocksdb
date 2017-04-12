@@ -397,7 +397,7 @@ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
 }
 
 // Detect if SS42 or not.
-#ifndef  __powerpc64__
+#ifndef  HAVE_POWER8
 static bool isSSE42() {
 #if defined(__GNUC__) && defined(__x86_64__) && !defined(IOS_CROSS_COMPILE)
   uint32_t c_;
@@ -414,7 +414,7 @@ static bool isSSE42() {
 }
 #endif
 
-#if defined(__powerpc64__) && defined(HAS_ALTIVEC) 
+#if defined(HAVE_POWER8) && defined(HAS_ALTIVEC) 
 uint32_t ExtendPPCImpl(uint32_t crc, const char* buf, size_t size) {
   return crc32c_ppc(crc,(const unsigned char*)buf,size);
 }
@@ -429,7 +429,7 @@ static bool isAltiVec(){
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
 static Function Choose_Extend() {
-#ifndef  __powerpc64__
+#ifndef  HAVE_POWER8
   return isSSE42() ? ExtendImpl<Fast_CRC32> : ExtendImpl<Slow_CRC32>;
 #else
   return isAltiVec() ? ExtendPPCImpl : ExtendImpl<Slow_CRC32>;
@@ -442,7 +442,7 @@ bool IsFastCrc32Supported() {
 #elif defined(_WIN64)
   return isSSE42();
 #else
-# if defined(__powerpc64__) && defined(HAS_ALTIVEC)
+# if defined(HAVE_POWER8) && defined(HAS_ALTIVEC)
   if (arch_ppc_probe()) {
     return true;
   }
