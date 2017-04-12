@@ -15,13 +15,13 @@
 
 #include "db/db_impl.h"
 #include "db/db_test_util.h"
+#include "options/options_parser.h"
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "util/coding.h"
 #include "util/fault_injection_test_env.h"
-#include "util/options_parser.h"
 #include "util/string_util.h"
 #include "util/sync_point.h"
 #include "util/testharness.h"
@@ -1731,7 +1731,7 @@ TEST_F(ColumnFamilyTest, SameCFManualAutomaticCompactionsLevel) {
 
   one.num_levels = 1;
   // trigger compaction if there are >= 4 files
-  one.level0_file_num_compaction_trigger = 4;
+  one.level0_file_num_compaction_trigger = 3;
   one.write_buffer_size = 120000;
 
   Reopen({default_cf, one});
