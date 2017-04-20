@@ -6,28 +6,14 @@
  * as published by the Free Software Foundation; either version
  * 2 of the License, or (at your option) any later version.
  */
-#ifndef CEPH_COMMON_CRC32C_PPC_H
-#define CEPH_COMMON_CRC32C_PPC_H
-
-#include "util/ppc-opcode.h"
+#ifndef CRC32C_PPC_H
+#define CRC32C_PPC_H
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if defined(__powerpc64__)
-
 extern uint32_t crc32c_ppc(uint32_t crc, unsigned char const *buffer, unsigned len);
-unsigned int __crc32_vpmsum(unsigned int crc, unsigned char const *p,
-                            unsigned long len);
-#else
-
-static inline uint32_t crc32c_ppc(uint32_t crc, unsigned char const *buffer, unsigned len)
-{
-	return 0;
-}
-
-#endif
 
 #ifdef __cplusplus
 }

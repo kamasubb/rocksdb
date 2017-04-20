@@ -102,6 +102,7 @@ endif
 
 ifeq (,$(shell $(CXX) -fsyntax-only -mcpu=power8 -xc /dev/null 2>&1))
 CXXFLAGS += -DHAVE_POWER8
+CFLAGS +=  -DHAVE_POWER8
 HAVE_POWER8=1
 endif
 
@@ -294,7 +295,9 @@ util/build_version.cc: FORCE
 	else mv -f $@-t $@; fi
 
 LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
-LIBASMOBJECTS = $(LIB_ASM_SOURCE:.S=.o)
+LIBCOBJECTS = $(LIB_C_SOURCES:.c=.o)
+LIBASMOBJECTS = $(LIB_ASM_SOURCES:.S=.o)
+LIBOBJECTS += $(LIBCOBJECTS)
 LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.o)
 MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
 
@@ -306,7 +309,7 @@ VALGRIND_VER := $(join $(VALGRIND_VER),valgrind)
 
 VALGRIND_OPTS = --error-exitcode=$(VALGRIND_ERROR) --leak-check=full
 
-BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(TESTUTIL) $(LIB_ASM_SOURCE:.S=.o)
+BENCHTOOLOBJECTS = $(BENCH_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(TESTUTIL) $(LIB_ASM_SOURCES:.S=.o)
 
 EXPOBJECTS = $(EXP_LIB_SOURCES:.cc=.o) $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 
@@ -535,7 +538,7 @@ $(SHARED3): $(SHARED4)
 endif
 
 $(SHARED4): $(LIBOBJECTS)
-	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LIB_SOURCES) $(LIB_ASM_SOURCE)  $(TOOL_LIB_SOURCES) \
+	$(CXX) $(PLATFORM_SHARED_LDFLAGS)$(SHARED3) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) $(LIB_SOURCES) $(LIB_ASM_SOURCES)  $(TOOL_LIB_SOURCES) \
 		$(LDFLAGS) -o $@
 
 endif  # PLATFORM_SHARED_EXT
@@ -858,7 +861,7 @@ analyze: clean
 CLEAN_FILES += unity.cc
 unity.cc: Makefile
 	rm -f $@ $@-t
-	for source_file in $(LIB_SOURCES) $(LIB_ASM_SOURCE) ; do \
+	for source_file in $(LIB_SOURCES) $(LIB_ASM_SOURCES) ; do \
 		echo "#include \"$$source_file\"" >> $@-t; \
 	done
 	chmod a=r $@-t
@@ -874,7 +877,7 @@ unity_test: db/db_test.o db/db_test_util.o $(TESTHARNESS) unity.a
 	$(AM_LINK)
 	./unity_test
 
-rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) $(LIB_ASM_SOURCE) unity.cc
+rocksdb.h rocksdb.cc: build_tools/amalgamate.py Makefile $(LIB_SOURCES) $(LIB_ASM_SOURCES) unity.cc
 	build_tools/amalgamate.py -I. -i./include unity.cc -x include/rocksdb/c.h -H rocksdb.h -o rocksdb.cc
 
 clean:
@@ -898,12 +901,12 @@ package:
 # ---------------------------------------------------------------------------
 # 	Unit tests and tools
 # ---------------------------------------------------------------------------
-#LIBASMOBJECTS=$(LIB_ASM_SOURCES:.S=.o)
+#LIBASMOBJECTS=$(LIB_ASM_SOURCESS:.S=.o)
 $(LIBRARY): $(LIBOBJECTS) $(LIBASMOBJECTS)
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $(LIBOBJECTS) $(LIBASMOBJECTS)
 
-$(TOOLS_LIBRARY): $(BENCH_LIB_SOURCES:.cc=.o) $(TOOL_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(LIB_ASM_SOURCE:.S=.o) $(TESTUTIL)
+$(TOOLS_LIBRARY): $(BENCH_LIB_SOURCES:.cc=.o) $(TOOL_LIB_SOURCES:.cc=.o) $(LIB_SOURCES:.cc=.o) $(LIB_ASM_SOURCES:.S=.o) $(TESTUTIL)
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
@@ -915,7 +918,7 @@ librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(LIBASMOBJECTS
 db_bench: tools/db_bench.o $(BENCHTOOLOBJECTS) $(LIBASMOBJECTS)
 	$(AM_LINK) 
 
-cache_bench: util/cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
+cache_bench: cache/cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
 
 persistent_cache_bench: utilities/persistent_cache/persistent_cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
@@ -988,6 +991,7 @@ corruption_test: db/corruption_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNE
 	$(AM_LINK)
 
 crc32c_test: util/crc32c_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	echo $(AM_LINK)
 	$(AM_LINK)
 
 slice_transform_test: util/slice_transform_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)

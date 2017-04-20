@@ -18,8 +18,8 @@ int arch_ppc_crc32 = 0;
 
 #if __linux__
 
-#include <elf.h>
-#include <link.h> // ElfW macro
+//#include <elf.h>
+//#include <link.h> // ElfW macro
 
 #ifndef PPC_FEATURE2_VEC_CRYPTO
 #define PPC_FEATURE2_VEC_CRYPTO         0x02000000

@@ -202,11 +202,12 @@ MOCK_LIB_SOURCES = \
   util/fault_injection_test_env.cc
 
 ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
-LIB_ASM_SOURCE =\
+LIB_ASM_SOURCES =\
   util/crc32c_ppc_asm.S                                         
 LIB_SOURCES += \
-  util/crc32c_ppc.cc                                            \
   util/ppc.cc
+LIB_C_SOURCES += \
+  util/crc32c_ppc.c                                            
 else
 LIB_ASM_SOURCE = 
 endif
