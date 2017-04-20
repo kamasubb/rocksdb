@@ -214,15 +214,16 @@ endif
 
 ifndef DISABLE_JEMALLOC
 	ifdef JEMALLOC
-		PLATFORM_CXXFLAGS += "-DROCKSDB_JEMALLOC"
-		PLATFORM_CCFLAGS +=  "-DROCKSDB_JEMALLOC"
+		PLATFORM_CXXFLAGS += -DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE
+		PLATFORM_CCFLAGS  += -DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE
 	endif
 	EXEC_LDFLAGS := $(JEMALLOC_LIB) $(EXEC_LDFLAGS)
 	PLATFORM_CXXFLAGS += $(JEMALLOC_INCLUDE)
 	PLATFORM_CCFLAGS += $(JEMALLOC_INCLUDE)
 endif
 
-export GTEST_THROW_ON_FAILURE=1 GTEST_HAS_EXCEPTIONS=1
+export GTEST_THROW_ON_FAILURE=1
+export GTEST_HAS_EXCEPTIONS=1
 GTEST_DIR = ./third-party/gtest-1.7.0/fused-src
 PLATFORM_CCFLAGS += -isystem $(GTEST_DIR)
 PLATFORM_CXXFLAGS += -isystem $(GTEST_DIR)
@@ -437,6 +438,7 @@ TESTS = \
 	lru_cache_test \
 	object_registry_test \
 	repair_test \
+	env_timed_test \
 
 PARALLEL_TEST = \
 	backupable_db_test \
@@ -905,6 +907,7 @@ $(TOOLS_LIBRARY): $(BENCH_LIB_SOURCES:.cc=.o) $(TOOL_LIB_SOURCES:.cc=.o) $(LIB_S
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
 
+
 librocksdb_env_basic_test.a: util/env_basic_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_V_AR)rm -f $@
 	$(AM_V_at)$(AR) $(ARFLAGS) $@ $^
@@ -917,6 +920,7 @@ cache_bench: util/cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 
 persistent_cache_bench: utilities/persistent_cache/persistent_cache_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
+
 
 memtablerep_bench: db/memtablerep_bench.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTUTIL)
 	$(AM_LINK)
@@ -954,6 +958,7 @@ dynamic_bloom_test: util/dynamic_bloom_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(T
 c_test: db/c_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
+
 cache_test: util/cache_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
@@ -971,6 +976,7 @@ redis_test: utilities/redis/redis_lists_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(
 
 hash_table_test: utilities/persistent_cache/hash_table_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
+
 
 histogram_test: util/histogram_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
@@ -1105,6 +1111,9 @@ spatial_db_test: utilities/spatialdb/spatial_db_test.o $(LIBOBJECTS) $(LIBASMOBJ
 	$(AM_LINK)
 
 env_mirror_test: utilities/env_mirror_test.o $(LIBOBJECTS) $(LIBASMOBJECTS) $(TESTHARNESS)
+	$(AM_LINK)
+
+env_timed_test: utilities/env_timed_test.o $(LIBOBJECTS) $(TESTHARNESS)
 	$(AM_LINK)
 
 ifdef ROCKSDB_USE_LIBRADOS
@@ -1494,10 +1503,14 @@ liblz4.a:
 java_static_libobjects = $(patsubst %,jls/%,$(LIBOBJECTS))
 CLEAN_FILES += jls
 
+ifneq ($(ROCKSDB_JAVA_NO_COMPRESSION), 1)
+JAVA_COMPRESSIONS = libz.a libbz2.a libsnappy.a liblz4.a
+endif
+
 JAVA_STATIC_FLAGS = -DZLIB -DBZIP2 -DSNAPPY -DLZ4
 JAVA_STATIC_INCLUDES = -I./zlib-$(ZLIB_VER) -I./bzip2-$(BZIP2_VER) -I./snappy-$(SNAPPY_VER) -I./lz4-$(LZ4_VER)/lib
 
-$(java_static_libobjects): jls/%.o: %.cc libz.a libbz2.a libsnappy.a liblz4.a
+$(java_static_libobjects): jls/%.o: %.cc $(JAVA_COMPRESSIONS)
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(JAVA_STATIC_FLAGS) $(JAVA_STATIC_INCLUDES) -fPIC -c $< -o $@ $(COVERAGEFLAGS)
 
 rocksdbjavastatic: $(java_static_libobjects)
@@ -1506,7 +1519,7 @@ rocksdbjavastatic: $(java_static_libobjects)
 	$(CXX) $(CXXFLAGS) -I./java/. $(JAVA_INCLUDE) -shared -fPIC \
 	  -o ./java/target/$(ROCKSDBJNILIB) $(JNI_NATIVE_SOURCES) \
 	  $(java_static_libobjects) $(COVERAGEFLAGS) \
-	  libz.a libbz2.a libsnappy.a liblz4.a $(JAVA_STATIC_LDFLAGS)
+	  $(JAVA_COMPRESSIONS) $(JAVA_STATIC_LDFLAGS)
 	cd java/target;strip -S -x $(ROCKSDBJNILIB)
 	cd java;jar -cf target/$(ROCKSDB_JAR) HISTORY*.md
 	cd java/target;jar -uf $(ROCKSDB_JAR) $(ROCKSDBJNILIB)

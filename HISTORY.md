@@ -3,9 +3,14 @@
 ### Public API Change
 * Support dynamically change `stats_dump_period_sec` option via SetDBOptions().
 * Added ReadOptions::max_skippable_internal_keys to set a threshold to fail a request as incomplete when too many keys are being skipped when using iterators.
+* DB::Get in place of std::string accepts PinnableSlice, which avoids the extra memcpy of value to std::string in most of cases.
+    * PinnableSlice releases the pinned resources that contain the value when it is destructed or when ::Reset() is called on it.
+    * The old API that accepts std::string, although discouraged, is still supported.
 
 ### New Features
 * Memtable flush can be avoided during checkpoint creation if total log file size is smaller than a threshold specified by the user.
+* Introduce level-based L0->L0 compactions to reduce file count, so write delays are incurred less often.
+* (Experimental) Partitioning filters which creates an index on the partitions. The feature can be enabled by setting partition_filters when using kFullFilter. Currently the feature also requires two-level indexing to be enabled. Number of partitions is the same as the number of partitions for indexes, which is controlled by metadata_block_size.
 
 ## 5.3.0 (03/08/2017)
 ### Public API Change
@@ -16,7 +21,6 @@
 
 ### Bug Fixes
 * Fix the bug that iterator may skip keys
-* Remove calling fallocate with FALLOC_FL_KEEP_SIZE | FALLOC_FL_PUNCH_HOLE flag to circumvent a kernel bug that changes file size after this call on XFS
 
 ## 5.2.0 (02/08/2017)
 ### Public API Change

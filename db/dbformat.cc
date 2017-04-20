@@ -14,9 +14,10 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include "monitoring/perf_context_imp.h"
 #include "port/port.h"
 #include "util/coding.h"
-#include "util/perf_context_imp.h"
+#include "util/string_util.h"
 
 namespace rocksdb {
 
