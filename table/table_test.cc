@@ -2,12 +2,13 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <inttypes.h>
 #include <stdio.h>
 
 #include <algorithm>
@@ -1848,7 +1849,10 @@ TEST_F(BlockBasedTableTest, FilterBlockInBlockCache) {
   // -- Table construction
   Options options;
   options.create_if_missing = true;
-  options.statistics = CreateDBStatistics();
+  // Keep a ref to statistic to prevent it from being destructed before
+  // block cache gets cleaned up upon next table_factory.reset
+  auto statistics = CreateDBStatistics();
+  options.statistics = statistics;
 
   // Enable the cache for index/filter blocks
   BlockBasedTableOptions table_options;
@@ -1928,15 +1932,17 @@ TEST_F(BlockBasedTableTest, FilterBlockInBlockCache) {
   }
   // release the iterator so that the block cache can reset correctly.
   iter.reset();
-
   c.ResetTableReader();
 
   // -- PART 2: Open with very small block cache
   // In this test, no block will ever get hit since the block cache is
   // too small to fit even one entry.
   table_options.block_cache = NewLRUCache(1, 4);
-  options.statistics = CreateDBStatistics();
   options.table_factory.reset(new BlockBasedTableFactory(table_options));
+  // Keep a ref to statistic to prevent it from being destructed before
+  // block cache gets cleaned up upon next table_factory.reset
+  statistics = CreateDBStatistics();
+  options.statistics = statistics;
   const ImmutableCFOptions ioptions2(options);
   c.Reopen(ioptions2);
   {
@@ -1991,7 +1997,10 @@ TEST_F(BlockBasedTableTest, FilterBlockInBlockCache) {
   // Open table with filter policy
   table_options.filter_policy.reset(NewBloomFilterPolicy(1));
   options.table_factory.reset(new BlockBasedTableFactory(table_options));
-  options.statistics = CreateDBStatistics();
+  // Keep a ref to statistic to prevent it from being destructed before
+  // block cache gets cleaned up upon next table_factory.reset
+  statistics = CreateDBStatistics();
+  options.statistics = statistics;
   ImmutableCFOptions ioptions4(options);
   ASSERT_OK(c3.Reopen(ioptions4));
   reader = dynamic_cast<BlockBasedTable*>(c3.GetTableReader());

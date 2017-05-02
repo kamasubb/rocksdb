@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -1314,9 +1316,9 @@ void VersionStorageInfo::ComputeCompactionScore(
           // Level-based involves L0->L0 compactions that can lead to oversized
           // L0 files. Take into account size as well to avoid later giant
           // compactions to the base level.
-          uint64_t base_level_max_bytes = MaxBytesForLevel(base_level());
           score = std::max(
-              score, static_cast<double>(total_size) / base_level_max_bytes);
+              score, static_cast<double>(total_size) /
+                     mutable_cf_options.max_bytes_for_level_base);
         }
       }
     } else {
@@ -2218,7 +2220,8 @@ VersionSet::VersionSet(const std::string& dbname,
       current_version_number_(0),
       manifest_file_size_(0),
       env_options_(storage_options),
-      env_options_compactions_(env_options_) {}
+      env_options_compactions_(
+          env_->OptimizeForCompactionTableRead(env_options_, *db_options_)) {}
 
 void CloseTables(void* ptr, size_t) {
   TableReader* table_reader = reinterpret_cast<TableReader*>(ptr);
@@ -3477,7 +3480,7 @@ InternalIterator* VersionSet::MakeInputIterator(
         // Create concatenating iterator for the files from this level
         list[num++] = NewTwoLevelIterator(
             new LevelFileIteratorState(
-                cfd->table_cache(), read_options, env_options_,
+                cfd->table_cache(), read_options, env_options_compactions_,
                 cfd->internal_comparator(),
                 nullptr /* no per level latency histogram */,
                 true /* for_compaction */, false /* prefix enabled */,

@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -530,7 +532,12 @@ Status BlockBasedTable::Open(const ImmutableCFOptions& ioptions,
   table_reader->reset();
 
   Footer footer;
-  auto s = ReadFooterFromFile(file.get(), file_size, &footer,
+
+  // Before read footer, readahead backwards to prefetch data
+  Status s =
+      file->Prefetch((file_size < 512 * 1024 ? 0 : file_size - 512 * 1024),
+                     512 * 1024 /* 512 KB prefetching */);
+  s = ReadFooterFromFile(file.get(), file_size, &footer,
                               kBlockBasedTableMagicNumber);
   if (!s.ok()) {
     return s;
@@ -541,8 +548,7 @@ Status BlockBasedTable::Open(const ImmutableCFOptions& ioptions,
         "version of RocksDB?");
   }
 
-  // We've successfully read the footer and the index block: we're
-  // ready to serve requests.
+  // We've successfully read the footer. We are ready to serve requests.
   // Better not mutate rep_ after the creation. eg. internal_prefix_transform
   // raw pointer will be used to create HashIndexReader, whose reset may
   // access a dangling pointer.
@@ -2057,21 +2063,17 @@ Status BlockBasedTable::DumpTable(WritableFile* out_file) {
 }
 
 void BlockBasedTable::Close() {
-  rep_->filter_entry.Release(rep_->table_options.block_cache.get());
-  rep_->index_entry.Release(rep_->table_options.block_cache.get());
-  rep_->range_del_entry.Release(rep_->table_options.block_cache.get());
-  // cleanup index and filter blocks to avoid accessing dangling pointer
-  if (!rep_->table_options.no_block_cache) {
-    char cache_key[kMaxCacheKeyPrefixSize + kMaxVarint64Length];
-    // Get the filter block key
-    auto key = GetCacheKey(rep_->cache_key_prefix, rep_->cache_key_prefix_size,
-                           rep_->footer.metaindex_handle(), cache_key);
-    rep_->table_options.block_cache.get()->Erase(key);
-    // Get the index block key
-    key = GetCacheKeyFromOffset(rep_->cache_key_prefix,
-                                rep_->cache_key_prefix_size,
-                                rep_->dummy_index_reader_offset, cache_key);
-    rep_->table_options.block_cache.get()->Erase(key);
+  const bool force_erase = true;
+  auto block_cache = rep_->table_options.block_cache.get();
+  if (block_cache) {
+    // The filter_entry and inde_entry's lifetime ends with table's and is
+    // forced to be released.
+    // Note that if the xxx_entry is not set then the cached entry might remian
+    // in the  cache for some more time. The destrcutor hence must take int
+    // account that the table object migth no longer be available.
+    rep_->filter_entry.Release(block_cache, force_erase);
+    rep_->index_entry.Release(block_cache, force_erase);
+    rep_->range_del_entry.Release(block_cache);
   }
 }
 

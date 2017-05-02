@@ -2,6 +2,8 @@
 //  This source code is licensed under the BSD-style license found in the
 //  LICENSE file in the root directory of this source tree. An additional grant
 //  of patent rights can be found in the PATENTS file in the same directory.
+//  This source code is also licensed under the GPLv2 license found in the
+//  COPYING file in the root directory of this source tree.
 //
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -1666,6 +1668,16 @@ bool DBImpl::GetIntPropertyInternal(ColumnFamilyData* cfd,
   }
 }
 
+#ifndef ROCKSDB_LITE
+Status DBImpl::ResetStats() {
+  InstrumentedMutexLock l(&mutex_);
+  for (auto* cfd : *versions_->GetColumnFamilySet()) {
+    cfd->internal_stats()->Clear();
+  }
+  return Status::OK();
+}
+#endif  // ROCKSDB_LITE
+
 bool DBImpl::GetAggregatedIntProperty(const Slice& property,
                                       uint64_t* aggregated_value) {
   const DBPropertyInfo* property_info = GetPropertyInfo(property);
@@ -2522,7 +2534,8 @@ Status DBImpl::IngestExternalFile(
     if (status.ok()) {
       bool need_flush = false;
       status = ingestion_job.NeedsFlush(&need_flush);
-
+      TEST_SYNC_POINT_CALLBACK("DBImpl::IngestExternalFile:NeedFlush",
+                               &need_flush);
       if (status.ok() && need_flush) {
         mutex_.Unlock();
         status = FlushMemTable(cfd, FlushOptions(), true /* writes_stopped */);
