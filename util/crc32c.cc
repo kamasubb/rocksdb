@@ -25,6 +25,12 @@
 #endif
 #include "util/coding.h"
 
+#ifdef  __powerpc64__
+#include "util/crc32c_ppc_constants.h"
+#include "util/crc32c_ppc.h"
+#include "util/ppc.h"
+#endif
+
 namespace rocksdb {
 namespace crc32c {
 
@@ -396,6 +402,7 @@ uint32_t ExtendImpl(uint32_t crc, const char* buf, size_t size) {
 }
 
 // Detect if SS42 or not.
+#ifndef  HAVE_POWER8
 static bool isSSE42() {
 #if defined(__GNUC__) && defined(__x86_64__) && !defined(IOS_CROSS_COMPILE)
   uint32_t c_;
@@ -410,11 +417,29 @@ static bool isSSE42() {
   return false;
 #endif
 }
+#endif
+
+#if defined(HAVE_POWER8) && defined(HAS_ALTIVEC) 
+uint32_t ExtendPPCImpl(uint32_t crc, const char* buf, size_t size) {
+  return crc32c_ppc(crc,(const unsigned char*)buf,size);
+}
+static bool isAltiVec(){
+  if (arch_ppc_probe()) {
+    return true;
+  }else{
+    return false;
+  }
+}
+# endif
 
 typedef uint32_t (*Function)(uint32_t, const char*, size_t);
 
 static inline Function Choose_Extend() {
+#ifndef  HAVE_POWER8
   return isSSE42() ? ExtendImpl<Fast_CRC32> : ExtendImpl<Slow_CRC32>;
+#else
+  return isAltiVec() ? ExtendPPCImpl : ExtendImpl<Slow_CRC32>;
+#endif
 }
 
 bool IsFastCrc32Supported() {
@@ -423,6 +448,11 @@ bool IsFastCrc32Supported() {
 #elif defined(_WIN64)
   return isSSE42();
 #else
+# if defined(HAVE_POWER8) && defined(HAS_ALTIVEC)
+  if (arch_ppc_probe()) {
+    return true;
+  }
+# endif
   return false;
 #endif
 }

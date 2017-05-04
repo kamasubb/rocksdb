@@ -96,6 +96,18 @@ OPT += -momit-leaf-frame-pointer
 endif
 endif
 
+ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
+CXXFLAGS += -DHAS_ALTIVEC
+CFLAGS += -DHAS_ALTIVEC
+HAS_ALTIVEC=1
+endif
+
+ifeq (,$(shell $(CXX) -fsyntax-only -mcpu=power8 -xc /dev/null 2>&1))
+CXXFLAGS += -DHAVE_POWER8
+CFLAGS +=  -DHAVE_POWER8
+HAVE_POWER8=1
+endif
+
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
 ifeq ($(DEBUG_LEVEL),0)
@@ -302,9 +314,9 @@ util/build_version.cc: FORCE
 	  cmp -s $@-t $@ && rm -f $@-t || mv -f $@-t $@;		\
 	else mv -f $@-t $@; fi
 
-LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
-LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.o)
-MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
+LIBOBJECTS = $(filter %.o,$(LIB_SOURCES:.cc=.cc.o) $(LIB_SOURCES_C:.c=.c.o) $(LIB_SOURCES_ASM:.S=.S.o))
+LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.cc.o)
+MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.cc.o)
 
 GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./util/testutil.o
@@ -546,7 +558,7 @@ endif
 shared_libobjects = $(patsubst %,shared-objects/%,$(LIBOBJECTS))
 CLEAN_FILES += shared-objects
 
-$(shared_libobjects): shared-objects/%.o: %.cc
+$(shared_libobjects): shared-objects/%.o: %.S %.c %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) -c $< -o $@
 
 $(SHARED4): $(shared_libobjects)
@@ -1626,10 +1638,13 @@ IOSVERSION=$(shell defaults read $(PLATFORMSROOT)/iPhoneOS.platform/version CFBu
 	lipo ios-x86/$@ ios-arm/$@ -create -output $@
 
 else
-.cc.o:
+%.cc.o: %.cc
 	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
-.c.o:
+%.c.o: %.c
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+
+%.S.o: %.S
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
 endif
 
@@ -1645,7 +1660,9 @@ DEPFILES = $(all_sources:.cc=.d)
 
 # The .d file indicates .cc file's dependencies on .h files. We generate such
 # dependency by g++'s -MM option, whose output is a make dependency rule.
-$(DEPFILES): %.d: %.cc
+$(DEPFILES): %.d
+
+%.d: %.cc %.c %.S
 	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' "$<" -o '$@'
 
