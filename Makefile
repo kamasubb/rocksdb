@@ -96,6 +96,18 @@ OPT += -momit-leaf-frame-pointer
 endif
 endif
 
+ifeq (,$(shell $(CXX) -fsyntax-only -maltivec -xc /dev/null 2>&1))
+CXXFLAGS += -DHAS_ALTIVEC
+CFLAGS += -DHAS_ALTIVEC
+HAS_ALTIVEC=1
+endif
+
+ifeq (,$(shell $(CXX) -fsyntax-only -mcpu=power8 -xc /dev/null 2>&1))
+CXXFLAGS += -DHAVE_POWER8
+CFLAGS +=  -DHAVE_POWER8
+HAVE_POWER8=1
+endif
+
 # if we're compiling for release, compile without debug code (-DNDEBUG) and
 # don't treat warnings as errors
 ifeq ($(DEBUG_LEVEL),0)
@@ -305,9 +317,9 @@ util/build_version.cc: FORCE
 	else mv -f $@-t $@; fi
 endif
 
-LIBOBJECTS = $(LIB_SOURCES:.cc=.o)
-LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.o)
-MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.o)
+LIBOBJECTS = $(filter %.o,$(LIB_SOURCES:.cc=.cc.o) $(LIB_SOURCES_C:.c=.c.o) $(LIB_SOURCES_ASM:.S=.S.o))
+LIBOBJECTS += $(TOOL_LIB_SOURCES:.cc=.cc.o)
+MOCKOBJECTS = $(MOCK_LIB_SOURCES:.cc=.cc.o)
 
 GTEST = $(GTEST_DIR)/gtest/gtest-all.o
 TESTUTIL = ./util/testutil.o
@@ -549,7 +561,7 @@ endif
 shared_libobjects = $(patsubst %,shared-objects/%,$(LIBOBJECTS))
 CLEAN_FILES += shared-objects
 
-$(shared_libobjects): shared-objects/%.o: %.cc
+$(shared_libobjects): shared-objects/%.o: %.S %.c %.cc
 	$(AM_V_CC)mkdir -p $(@D) && $(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) -c $< -o $@
 
 $(SHARED4): $(shared_libobjects)
@@ -1663,11 +1675,15 @@ IOSVERSION=$(shell defaults read $(PLATFORMSROOT)/iPhoneOS.platform/version CFBu
 	lipo ios-x86/$@ ios-arm/$@ -create -output $@
 
 else
-.cc.o:
+%.cc.o: %.cc
 	$(AM_V_CC)$(CXX) $(CXXFLAGS) -c $< -o $@ $(COVERAGEFLAGS)
 
-.c.o:
+%.c.o:  %.c
 	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+
+%.S.o:  %.S
+	$(AM_V_CC)$(CC) $(CFLAGS) -c $< -o $@
+
 endif
 
 # ---------------------------------------------------------------------------
@@ -1676,6 +1692,8 @@ endif
 
 all_sources = $(LIB_SOURCES) $(MAIN_SOURCES) $(MOCK_LIB_SOURCES) $(TOOL_LIB_SOURCES) $(BENCH_LIB_SOURCES) $(TEST_LIB_SOURCES) $(EXP_LIB_SOURCES)
 DEPFILES = $(all_sources:.cc=.d)
+DEPFILES_C = $(LIB_SOURCES_C:.c=.d)
+DEPFILES_ASM = $(LIB_SOURCES_ASM:.S=.d)
 
 # Add proper dependency support so changing a .h file forces a .cc file to
 # rebuild.
@@ -1686,7 +1704,16 @@ $(DEPFILES): %.d: %.cc
 	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
 	  -MM -MT'$@' -MT'$(<:.cc=.o)' "$<" -o '$@'
 
-depend: $(DEPFILES)
+$(DEPFILES_C): %.d: %.c
+	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	  -MM -MT'$@' -MT'$(<:.c=.o)' "$<" -o '$@'
+
+$(DEPFILES_ASM): %.d: %.S
+	@$(CXX) $(CXXFLAGS) $(PLATFORM_SHARED_CFLAGS) \
+	  -MM -MT'$@' -MT'$(<:.S=.o)' "$<" -o '$@'
+
+
+depend: $(DEPFILES) $(DEPFILES_C) $(DEPFILES_ASM)
 
 # if the make goal is either "clean" or "format", we shouldn't
 # try to import the *.d files.
