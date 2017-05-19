@@ -41,6 +41,7 @@ package/
 .phutil_module_cache
 unity.a
 tags
+etags
 rocksdb_dump
 rocksdb_undump
 db_test2
@@ -59,7 +60,7 @@ rocksdb.h
 unity.cc
 java/crossbuild/.vagrant
 .vagrant/
-java/**.asc
+java/**/*.asc
 java/javadoc
 
 scan_build_report/

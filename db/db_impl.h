@@ -102,10 +102,19 @@ class DBImpl : public DB {
       const std::vector<Slice>& keys,
       std::vector<std::string>* values) override;
 
-  virtual Status CreateColumnFamily(const ColumnFamilyOptions& options,
+  virtual Status CreateColumnFamily(const ColumnFamilyOptions& cf_options,
                                     const std::string& column_family,
                                     ColumnFamilyHandle** handle) override;
+  virtual Status CreateColumnFamilies(
+      const ColumnFamilyOptions& cf_options,
+      const std::vector<std::string>& column_family_names,
+      std::vector<ColumnFamilyHandle*>* handles) override;
+  virtual Status CreateColumnFamilies(
+      const std::vector<ColumnFamilyDescriptor>& column_families,
+      std::vector<ColumnFamilyHandle*>* handles) override;
   virtual Status DropColumnFamily(ColumnFamilyHandle* column_family) override;
+  virtual Status DropColumnFamilies(
+      const std::vector<ColumnFamilyHandle*>& column_families) override;
 
   // Returns false if key doesn't exist in the database and true if it may.
   // If value_found is not passed in as null, then return the value if found in
@@ -193,6 +202,8 @@ class DBImpl : public DB {
   virtual Status SyncWAL() override;
 
   virtual SequenceNumber GetLatestSequenceNumber() const override;
+
+  bool HasActiveSnapshotLaterThanSN(SequenceNumber sn);
 
 #ifndef ROCKSDB_LITE
   using DB::ResetStats;
@@ -378,9 +389,9 @@ class DBImpl : public DB {
   Status TEST_GetAllImmutableCFOptions(
       std::unordered_map<std::string, const ImmutableCFOptions*>* iopts_map);
 
-  // Return the lastest MutableCFOptions of of a column family
+  // Return the lastest MutableCFOptions of a column family
   Status TEST_GetLatestMutableCFOptions(ColumnFamilyHandle* column_family,
-                                        MutableCFOptions* mutable_cf_opitons);
+                                        MutableCFOptions* mutable_cf_options);
 
   Cache* TEST_table_cache() { return table_cache_.get(); }
 
@@ -455,6 +466,9 @@ class DBImpl : public DB {
   // mutex is held.  Return value only valid until next call to this function or
   // mutex is released.
   ColumnFamilyHandle* GetColumnFamilyHandle(uint32_t column_family_id);
+
+  // Same as above, should called without mutex held and not on write thread.
+  ColumnFamilyHandle* GetColumnFamilyHandleUnlocked(uint32_t column_family_id);
 
   // Returns the number of currently running flushes.
   // REQUIREMENT: mutex_ must be held when calling this function.
@@ -551,9 +565,10 @@ class DBImpl : public DB {
                                         RangeDelAggregator* range_del_agg);
 
   // Except in DB::Open(), WriteOptionsFile can only be called when:
-  // 1. WriteThread::Writer::EnterUnbatched() is used.
-  // 2. db_mutex is held
-  Status WriteOptionsFile();
+  // Persist options to options file.
+  // If need_mutex_lock = false, the method will lock DB mutex.
+  // If need_enter_write_thread = false, the method will enter write thread.
+  Status WriteOptionsFile(bool need_mutex_lock, bool need_enter_write_thread);
 
   // The following two functions can only be called when:
   // 1. WriteThread::Writer::EnterUnbatched() is used.
@@ -635,6 +650,12 @@ class DBImpl : public DB {
   void MaybeIgnoreError(Status* s) const;
 
   const Status CreateArchivalDirectory();
+
+  Status CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
+                                const std::string& cf_name,
+                                ColumnFamilyHandle** handle);
+
+  Status DropColumnFamilyImpl(ColumnFamilyHandle* column_family);
 
   // Delete any unneeded files and stale in-memory entries.
   void DeleteObsoleteFiles();
@@ -1077,7 +1098,7 @@ class DBImpl : public DB {
   // Indicate DB was opened successfully
   bool opened_successfully_;
 
-  // minmum log number still containing prepared data.
+  // minimum log number still containing prepared data.
   // this is used by FindObsoleteFiles to determine which
   // flushed logs we must keep around because they still
   // contain prepared data which has not been flushed or rolled back
@@ -1090,7 +1111,7 @@ class DBImpl : public DB {
   // to prepared_section_completed_ which maps LOG -> instance_count
   // since a log could contain multiple prepared sections
   //
-  // when trying to determine the minmum log still active we first
+  // when trying to determine the minimum log still active we first
   // consult min_log_with_prep_. while that root value maps to
   // a value > 0 in prepared_section_completed_ we decrement the
   // instance_count for that log and pop the root value in

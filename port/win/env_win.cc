@@ -35,8 +35,8 @@
 #include "monitoring/thread_status_updater.h"
 #include "monitoring/thread_status_util.h"
 
-#include <Rpc.h>  // For UUID generation
-#include <Windows.h>
+#include <rpc.h>  // for uuid generation
+#include <windows.h>
 
 namespace rocksdb {
 
@@ -1079,13 +1079,19 @@ std::string Env::GenerateUniqueId() {
   UuidCreateSequential(&uuid);
 
   RPC_CSTR rpc_str;
-  auto status = UuidToStringA(&uuid, &rpc_str);
-  assert(status == RPC_S_OK);
+#ifndef NDEBUG
+  assert(UuidToStringA(&uuid, &rpc_str) == RPC_S_OK);
+#else
+  UuidToStringA(&uuid, &rpc_str);
+#endif
 
   result = reinterpret_cast<char*>(rpc_str);
 
-  status = RpcStringFreeA(&rpc_str);
-  assert(status == RPC_S_OK);
+#ifndef NDEBUG
+  assert(RpcStringFreeA(&rpc_str) == RPC_S_OK);
+#else
+  RpcStringFreeA(&rpc_str);
+#endif
 
   return result;
 }

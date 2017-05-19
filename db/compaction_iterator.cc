@@ -93,7 +93,9 @@ CompactionIterator::CompactionIterator(
     latest_snapshot_ = snapshots_->back();
   }
   if (compaction_filter_ != nullptr) {
-    if (compaction_filter_->IgnoreSnapshots()) ignore_snapshots_ = true;
+    if (compaction_filter_->IgnoreSnapshots()) {
+      ignore_snapshots_ = true;
+    }
   } else {
     ignore_snapshots_ = false;
   }
@@ -546,7 +548,8 @@ void CompactionIterator::PrepareOutput() {
 
   // This is safe for TransactionDB write-conflict checking since transactions
   // only care about sequence number larger than any active snapshots.
-  if (bottommost_level_ && valid_ && ikey_.sequence <= earliest_snapshot_ &&
+  if ((compaction_ != nullptr && !compaction_->allow_ingest_behind()) &&
+      bottommost_level_ && valid_ && ikey_.sequence <= earliest_snapshot_ &&
       ikey_.type != kTypeMerge &&
       !cmp_->Equal(compaction_->GetLargestUserKey(), ikey_.user_key)) {
     assert(ikey_.type != kTypeDeletion && ikey_.type != kTypeSingleDeletion);

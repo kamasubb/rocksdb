@@ -55,7 +55,7 @@ class EnvCounter : public EnvWrapper {
   }
 
  private:
-  int num_new_writable_file_;
+  std::atomic<int> num_new_writable_file_;
 };
 
 class ColumnFamilyTest : public testing::Test {
@@ -674,6 +674,44 @@ TEST_F(ColumnFamilyTest, AddDrop) {
   std::sort(families.begin(), families.end());
   ASSERT_TRUE(families ==
               std::vector<std::string>({"default", "four", "three"}));
+}
+
+TEST_F(ColumnFamilyTest, BulkAddDrop) {
+  constexpr int kNumCF = 1000;
+  ColumnFamilyOptions cf_options;
+  WriteOptions write_options;
+  Open();
+  std::vector<std::string> cf_names;
+  std::vector<ColumnFamilyHandle*> cf_handles;
+  for (int i = 1; i <= kNumCF; i++) {
+    cf_names.push_back("cf1-" + ToString(i));
+  }
+  ASSERT_OK(db_->CreateColumnFamilies(cf_options, cf_names, &cf_handles));
+  for (int i = 1; i <= kNumCF; i++) {
+    ASSERT_OK(db_->Put(write_options, cf_handles[i - 1], "foo", "bar"));
+  }
+  ASSERT_OK(db_->DropColumnFamilies(cf_handles));
+  std::vector<ColumnFamilyDescriptor> cf_descriptors;
+  for (auto* handle : cf_handles) {
+    delete handle;
+  }
+  cf_handles.clear();
+  for (int i = 1; i <= kNumCF; i++) {
+    cf_descriptors.emplace_back("cf2-" + ToString(i), ColumnFamilyOptions());
+  }
+  ASSERT_OK(db_->CreateColumnFamilies(cf_descriptors, &cf_handles));
+  for (int i = 1; i <= kNumCF; i++) {
+    ASSERT_OK(db_->Put(write_options, cf_handles[i - 1], "foo", "bar"));
+  }
+  ASSERT_OK(db_->DropColumnFamilies(cf_handles));
+  for (auto* handle : cf_handles) {
+    delete handle;
+  }
+  Close();
+  std::vector<std::string> families;
+  ASSERT_OK(DB::ListColumnFamilies(db_options_, dbname_, &families));
+  std::sort(families.begin(), families.end());
+  ASSERT_TRUE(families == std::vector<std::string>({"default"}));
 }
 
 TEST_F(ColumnFamilyTest, DropTest) {

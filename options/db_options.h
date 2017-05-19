@@ -27,7 +27,6 @@ struct ImmutableDBOptions {
   std::shared_ptr<SstFileManager> sst_file_manager;
   std::shared_ptr<Logger> info_log;
   InfoLogLevel info_log_level;
-  int max_open_files;
   int max_file_opening_threads;
   std::shared_ptr<Statistics> statistics;
   bool use_fsync;
@@ -78,6 +77,7 @@ struct ImmutableDBOptions {
   bool fail_if_options_file_error;
   bool dump_malloc_stats;
   bool avoid_flush_during_recovery;
+  bool allow_ingest_behind;
 };
 
 struct MutableDBOptions {
@@ -94,6 +94,7 @@ struct MutableDBOptions {
   uint64_t max_total_wal_size;
   uint64_t delete_obsolete_files_period_micros;
   unsigned int stats_dump_period_sec;
+  int max_open_files;
 };
 
 }  // namespace rocksdb

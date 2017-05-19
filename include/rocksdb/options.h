@@ -136,7 +136,7 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // the same DB. The only exception is reserved for upgrade, where a DB
   // previously without a merge operator is introduced to Merge operation
   // for the first time. It's necessary to specify a merge operator when
-  // openning the DB in this case.
+  // opening the DB in this case.
   // Default: nullptr
   std::shared_ptr<MergeOperator> merge_operator = nullptr;
 
@@ -578,7 +578,7 @@ struct DBOptions {
   //
   // Files will be opened in "direct I/O" mode
   // which means that data r/w from the disk will not be cached or
-  // bufferized. The hardware buffer of the devices may however still
+  // buffered. The hardware buffer of the devices may however still
   // be used. Memory mapped files are not impacted by these parameters.
 
   // Use O_DIRECT for user reads
@@ -847,6 +847,18 @@ struct DBOptions {
   //
   // Dynamically changeable through SetDBOptions() API.
   bool avoid_flush_during_shutdown = false;
+
+  // Set this option to true during creation of database if you want
+  // to be able to ingest behind (call IngestExternalFile() skipping keys
+  // that already exist, rather than overwriting matching keys).
+  // Setting this option to true will affect 2 things:
+  // 1) Disable some internal optimizations around SST file compression
+  // 2) Reserve bottom-most level for ingested files only.
+  // 3) Note that num_levels should be >= 3 if this option is turned on.
+  //
+  // DEFAULT: false
+  // Immutable.
+  bool allow_ingest_behind = false;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)
@@ -934,7 +946,7 @@ struct ReadOptions {
   // and iterator_upper_bound need to have the same prefix.
   // This is because ordering is not guaranteed outside of prefix domain.
   // There is no lower bound on the iterator. If needed, that can be easily
-  // implemented
+  // implemented.
   //
   // Default: nullptr
   const Slice* iterate_upper_bound;
@@ -1126,6 +1138,14 @@ struct IngestExternalFileOptions {
   // If set to false and the file key range overlaps with the memtable key range
   // (memtable flush required), IngestExternalFile will fail.
   bool allow_blocking_flush = true;
+  // Set to true if you would like duplicate keys in the file being ingested
+  // to be skipped rather than overwriting existing data under that key.
+  // Usecase: back-fill of some historical data in the database without
+  // over-writing existing newer version of data.
+  // This option could only be used if the DB has been running
+  // with allow_ingest_behind=true since the dawn of time.
+  // All files will be ingested at the bottommost level with seqno=0.
+  bool ingest_behind = false;
 };
 
 }  // namespace rocksdb

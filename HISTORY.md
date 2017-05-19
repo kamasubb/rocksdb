@@ -1,9 +1,18 @@
 # Rocksdb Change Log
 ## Unreleased
+
+## 5.5.0 (05/17/2017)
 ### New Features
+* FIFO compaction to support Intra L0 compaction too with CompactionOptionsFIFO.allow_compaction=true.
 * DB::ResetStats() to reset internal stats.
 * Statistics::Reset() to reset user stats.
 * ldb add option --try_load_options, which will open DB with its own option file.
+* Introduce WriteBatch::PopSavePoint to pop the most recent save point explicitly.
+* Support dynamically change `max_open_files` option via SetDBOptions()
+* Added DB::CreateColumnFamilie() and DB::DropColumnFamilies() to bulk create/drop column families.
+* Add debugging function `GetAllKeyVersions` to see internal versions of a range of keys.
+* Support file ingestion with universal compaction style
+* Support file ingestion behind with option `allow_ingest_behind`
 
 ## 5.4.0 (04/11/2017)
 ### Public API Change
@@ -247,7 +256,7 @@
 * Added a new way to report QPS from db_bench (check out --report_file and --report_interval_seconds)
 * Added a cache for individual rows. See DBOptions::row_cache for more info.
 * Several new features on EventListener (see include/rocksdb/listener.h):
- - OnCompationCompleted() now returns per-compaciton job statistics, defined in include/rocksdb/compaction_job_stats.h.
+ - OnCompationCompleted() now returns per-compaction job statistics, defined in include/rocksdb/compaction_job_stats.h.
  - Added OnTableFileCreated() and OnTableFileDeleted().
 * Add compaction_options_universal.enable_trivial_move to true, to allow trivial move while performing universal compaction. Trivial move will happen only when all the input files are non overlapping.
 

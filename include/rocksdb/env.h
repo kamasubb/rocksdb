@@ -183,7 +183,7 @@ class Env {
                                    unique_ptr<WritableFile>* result,
                                    const EnvOptions& options);
 
-  // Open `fname` for random read and write, if file dont exist the file
+  // Open `fname` for random read and write, if file doesn't exist the file
   // will be created.  On success, stores a pointer to the new file in
   // *result and returns OK.  On failure returns non-OK.
   //
@@ -318,7 +318,7 @@ class Env {
   // Wait for all threads started by StartThread to terminate.
   virtual void WaitForJoin() {}
 
-  // Get thread pool queue length for specific thrad pool.
+  // Get thread pool queue length for specific thread pool.
   virtual unsigned int GetThreadPoolQueueLen(Priority pri = LOW) const {
     return 0;
   }
@@ -468,8 +468,6 @@ class SequentialFile {
   // aligned buffer for Direct I/O
   virtual size_t GetRequiredBufferAlignment() const { return kDefaultPageSize; }
 
-  virtual void Rewind() {}
-
   // Remove any kind of caching of data from the offset to offset+length
   // of this file. If the length is 0, then it refers to the end of file.
   // If the system is not caching the file contents, then this is a noop.
@@ -518,7 +516,7 @@ class RandomAccessFile {
   // may not have been modified.
   //
   // This function guarantees, for IDs from a given environment, two unique ids
-  // cannot be made equal to eachother by adding arbitrary bytes to one of
+  // cannot be made equal to each other by adding arbitrary bytes to one of
   // them. That is, no unique ID is the prefix of another.
   //
   // This function guarantees that the returned ID will not be interpretable as
@@ -689,7 +687,7 @@ class WritableFile {
       return;
     }
     // If this write would cross one or more preallocation blocks,
-    // determine what the last preallocation block necesessary to
+    // determine what the last preallocation block necessary to
     // cover this write would be and Allocate to that point.
     const auto block_size = preallocation_block_size_;
     size_t new_last_preallocated_block =
@@ -703,14 +701,12 @@ class WritableFile {
     }
   }
 
- protected:
-  /*
-   * Pre-allocate space for a file.
-   */
+  // Pre-allocates space for a file.
   virtual Status Allocate(uint64_t offset, uint64_t len) {
     return Status::OK();
   }
 
+ protected:
   size_t preallocation_block_size() { return preallocation_block_size_; }
 
  private:

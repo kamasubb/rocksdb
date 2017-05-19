@@ -85,9 +85,14 @@ class PartitionedFilterBlockReader : public FilterBlockReader {
   std::unique_ptr<Block> idx_on_fltr_blk_;
   const Comparator& comparator_;
   const BlockBasedTable* table_;
-  Cache* block_cache_;
   std::unordered_map<uint64_t, FilterBlockReader*> filter_cache_;
   autovector<Cache::Handle*> handle_list_;
+  struct BlockHandleCmp {
+    bool operator()(const BlockHandle& lhs, const BlockHandle& rhs) const {
+      return lhs.offset() < rhs.offset();
+    }
+  };
+  std::set<BlockHandle, BlockHandleCmp> filter_block_set_;
   port::RWMutex mu_;
 };
 

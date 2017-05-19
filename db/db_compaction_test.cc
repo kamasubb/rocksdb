@@ -780,6 +780,41 @@ TEST_F(DBCompactionTest, ZeroSeqIdCompaction) {
   ASSERT_OK(Put("", ""));
 }
 
+TEST_F(DBCompactionTest, ManualCompactionUnknownOutputSize) {
+  // github issue #2249
+  Options options = CurrentOptions();
+  options.compaction_style = kCompactionStyleLevel;
+  options.level0_file_num_compaction_trigger = 3;
+  DestroyAndReopen(options);
+
+  // create two files in l1 that we can compact
+  for (int i = 0; i < 2; ++i) {
+    for (int j = 0; j < options.level0_file_num_compaction_trigger; j++) {
+      // make l0 files' ranges overlap to avoid trivial move
+      Put(std::to_string(2 * i), std::string(1, 'A'));
+      Put(std::to_string(2 * i + 1), std::string(1, 'A'));
+      Flush();
+      dbfull()->TEST_WaitForFlushMemTable();
+    }
+    dbfull()->TEST_WaitForCompact();
+    ASSERT_EQ(NumTableFilesAtLevel(0, 0), 0);
+    ASSERT_EQ(NumTableFilesAtLevel(1, 0), i + 1);
+  }
+
+  ColumnFamilyMetaData cf_meta;
+  dbfull()->GetColumnFamilyMetaData(dbfull()->DefaultColumnFamily(), &cf_meta);
+  ASSERT_EQ(2, cf_meta.levels[1].files.size());
+  std::vector<std::string> input_filenames;
+  for (const auto& sst_file : cf_meta.levels[1].files) {
+    input_filenames.push_back(sst_file.name);
+  }
+
+  // note CompactionOptions::output_file_size_limit is unset.
+  CompactionOptions compact_opt;
+  compact_opt.compression = kNoCompression;
+  dbfull()->CompactFiles(compact_opt, input_filenames, 1);
+}
+
 // Check that writes done during a memtable compaction are recovered
 // if the database is shutdown during the memtable compaction.
 TEST_F(DBCompactionTest, RecoverDuringMemtableCompaction) {
@@ -1852,6 +1887,47 @@ TEST_F(DBCompactionTest, L0_CompactionBug_Issue44_b) {
   } while (ChangeCompactOptions());
 }
 
+TEST_F(DBCompactionTest, ManualAutoRace) {
+  CreateAndReopenWithCF({"pikachu"}, CurrentOptions());
+  rocksdb::SyncPoint::GetInstance()->LoadDependency(
+      {{"DBImpl::BGWorkCompaction", "DBCompactionTest::ManualAutoRace:1"},
+       {"DBImpl::RunManualCompaction:WaitScheduled",
+        "BackgroundCallCompaction:0"}});
+
+  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+
+  Put(1, "foo", "");
+  Put(1, "bar", "");
+  Flush(1);
+  Put(1, "foo", "");
+  Put(1, "bar", "");
+  // Generate four files in CF 0, which should trigger an auto compaction
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+  Put("foo", "");
+  Put("bar", "");
+  Flush();
+
+  // The auto compaction is scheduled but waited until here
+  TEST_SYNC_POINT("DBCompactionTest::ManualAutoRace:1");
+  // The auto compaction will wait until the the manual compaction is registerd
+  // before processing so that it will be cancelled.
+  dbfull()->CompactRange(CompactRangeOptions(), handles_[1], nullptr, nullptr);
+  ASSERT_EQ("0,1", FilesPerLevel(1));
+
+  // Eventually the cancelled compaction will be rescheduled and executed.
+  dbfull()->TEST_WaitForCompact();
+  ASSERT_EQ("0,1", FilesPerLevel(0));
+  rocksdb::SyncPoint::GetInstance()->DisableProcessing();
+}
+
 TEST_P(DBCompactionTestWithParam, ManualCompaction) {
   Options options = CurrentOptions();
   options.max_subcompactions = max_subcompactions_;
@@ -2569,6 +2645,7 @@ TEST_P(DBCompactionDirectIOTest, DirectIO) {
   options.use_direct_io_for_flush_and_compaction = GetParam();
   options.env = new MockEnv(Env::Default());
   Reopen(options);
+  bool readahead = false;
   SyncPoint::GetInstance()->SetCallBack(
       "TableCache::NewIterator:for_compaction", [&](void* arg) {
         bool* use_direct_reads = static_cast<bool*>(arg);
@@ -2581,11 +2658,18 @@ TEST_P(DBCompactionDirectIOTest, DirectIO) {
         ASSERT_EQ(*use_direct_writes,
                   options.use_direct_io_for_flush_and_compaction);
       });
+  if (options.use_direct_io_for_flush_and_compaction) {
+    SyncPoint::GetInstance()->SetCallBack(
+        "SanitizeOptions:direct_io", [&](void* arg) {
+          readahead = true;
+        });
+  }
   SyncPoint::GetInstance()->EnableProcessing();
   CreateAndReopenWithCF({"pikachu"}, options);
   MakeTables(3, "p", "q", 1);
   ASSERT_EQ("1,1,1", FilesPerLevel(1));
   Compact(1, "p1", "p9");
+  ASSERT_FALSE(readahead ^ options.use_direct_io_for_flush_and_compaction);
   ASSERT_EQ("0,0,1", FilesPerLevel(1));
   Destroy(options);
   delete options.env;

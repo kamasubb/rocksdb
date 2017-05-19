@@ -190,7 +190,8 @@ DBOptions::DBOptions(const Options& options)
       fail_if_options_file_error(options.fail_if_options_file_error),
       dump_malloc_stats(options.dump_malloc_stats),
       avoid_flush_during_recovery(options.avoid_flush_during_recovery),
-      avoid_flush_during_shutdown(options.avoid_flush_during_shutdown) {
+      avoid_flush_during_shutdown(options.avoid_flush_during_shutdown),
+      allow_ingest_behind(options.allow_ingest_behind) {
 }
 
 void DBOptions::Dump(Logger* log) const {
@@ -312,7 +313,7 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
       str_compaction_style = it_compaction_style->second;
     }
     ROCKS_LOG_HEADER(log,
-                     "                        Options.compaction_style: %s",
+                     "                       Options.compaction_style: %s",
                      str_compaction_style.c_str());
 
     const auto& it_compaction_pri =
@@ -325,10 +326,10 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
       str_compaction_pri = it_compaction_pri->second;
     }
     ROCKS_LOG_HEADER(log,
-                     "                          Options.compaction_pri: %s",
+                     "                         Options.compaction_pri: %s",
                      str_compaction_pri.c_str());
     ROCKS_LOG_HEADER(log,
-                     " Options.compaction_options_universal.size_ratio: %u",
+                     "Options.compaction_options_universal.size_ratio: %u",
                      compaction_options_universal.size_ratio);
     ROCKS_LOG_HEADER(log,
                      "Options.compaction_options_universal.min_merge_width: %u",
@@ -345,9 +346,25 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         log,
         "Options.compaction_options_universal.compression_size_percent: %d",
         compaction_options_universal.compression_size_percent);
+    const auto& it_compaction_stop_style = compaction_stop_style_to_string.find(
+        compaction_options_universal.stop_style);
+    std::string str_compaction_stop_style;
+    if (it_compaction_stop_style == compaction_stop_style_to_string.end()) {
+      assert(false);
+      str_compaction_stop_style =
+          "unknown_" + std::to_string(compaction_options_universal.stop_style);
+    } else {
+      str_compaction_stop_style = it_compaction_stop_style->second;
+    }
+    ROCKS_LOG_HEADER(log,
+                     "Options.compaction_options_universal.stop_style: %s",
+                     str_compaction_stop_style.c_str());
     ROCKS_LOG_HEADER(
         log, "Options.compaction_options_fifo.max_table_files_size: %" PRIu64,
         compaction_options_fifo.max_table_files_size);
+    ROCKS_LOG_HEADER(log,
+                     "Options.compaction_options_fifo.allow_compaction: %d",
+                     compaction_options_fifo.allow_compaction);
     std::string collector_names;
     for (const auto& collector_factory : table_properties_collector_factories) {
       collector_names.append(collector_factory->Name());

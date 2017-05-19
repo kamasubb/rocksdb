@@ -23,6 +23,14 @@
 
 namespace rocksdb {
 
+#ifndef NDEBUG
+namespace {
+bool IsFileSectorAligned(const size_t off, size_t sector_size) {
+  return off % sector_size == 0;
+}
+}
+#endif
+
 Status SequentialFileReader::Read(size_t n, Slice* result, char* scratch) {
   Status s;
   if (use_direct_io()) {
@@ -502,7 +510,8 @@ class ReadaheadRandomAccessFile : public RandomAccessFile {
     if (prefetch_offset == buffer_offset_) {
       return Status::OK();
     }
-    return ReadIntoBuffer(prefetch_offset, offset - prefetch_offset + n);
+    return ReadIntoBuffer(prefetch_offset,
+                          Roundup(offset + n, alignment_) - prefetch_offset);
   }
 
   virtual size_t GetUniqueId(char* id, size_t max_size) const override {
@@ -537,6 +546,8 @@ class ReadaheadRandomAccessFile : public RandomAccessFile {
     if (n > buffer_.Capacity()) {
       n = buffer_.Capacity();
     }
+    assert(IsFileSectorAligned(offset, alignment_));
+    assert(IsFileSectorAligned(n, alignment_));
     Slice result;
     Status s = file_->Read(offset, n, &result, buffer_.BufferStart());
     if (s.ok()) {

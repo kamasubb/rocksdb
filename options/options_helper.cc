@@ -41,7 +41,7 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
   options.sst_file_manager = immutable_db_options.sst_file_manager;
   options.info_log = immutable_db_options.info_log;
   options.info_log_level = immutable_db_options.info_log_level;
-  options.max_open_files = immutable_db_options.max_open_files;
+  options.max_open_files = mutable_db_options.max_open_files;
   options.max_file_opening_threads =
       immutable_db_options.max_file_opening_threads;
   options.max_total_wal_size = mutable_db_options.max_total_wal_size;
@@ -119,6 +119,8 @@ DBOptions BuildDBOptions(const ImmutableDBOptions& immutable_db_options,
       immutable_db_options.avoid_flush_during_recovery;
   options.avoid_flush_during_shutdown =
       mutable_db_options.avoid_flush_during_shutdown;
+  options.allow_ingest_behind =
+      immutable_db_options.allow_ingest_behind;
 
   return options;
 }
